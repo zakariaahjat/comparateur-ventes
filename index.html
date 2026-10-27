@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comparateur de Ventes par Mois</title>
+<script src="./xlsx.full.min.js"></script>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-dark: #1e40af;
+    --green: #16a34a;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff; padding: 22px 28px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.15);
+  }
+  header h1 { font-size: 22px; font-weight: 700; }
+  header p { opacity: .85; font-size: 13px; margin-top: 4px; }
+
+  main { max-width: 1250px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  #warnBanner { display: none; background: #fef3c7; border: 1px solid #f59e0b; color: #92400e;
+    padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; }
+
+  .dropzone {
+    border: 2.5px dashed #94a3b8; border-radius: 14px; background: var(--card);
+    padding: 38px 20px; text-align: center; cursor: pointer; transition: all .2s;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--blue); background: #eff6ff; transform: scale(1.005); }
+  .dropzone .icon { font-size: 40px; }
+  .dropzone h2 { font-size: 17px; margin: 8px 0 4px; }
+  .dropzone p { color: var(--muted); font-size: 13px; }
+  .dropzone .btn { margin-top: 14px; pointer-events: none; }
+  .dropzone input[type=file] { display: none; }
+
+  .btn {
+    display: inline-block; background: var(--blue); color: #fff; border: none; cursor: pointer;
+    padding: 10px 20px; border-radius: 9px; font-size: 14px; font-weight: 600; transition: .15s;
+  }
+  .btn:hover { background: var(--blue-dark); }
+  .btn.green { background: var(--green); }
+  .btn.green:hover { background: #15803d; }
+  .btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 20px 0; }
+  .toolbar input[type=search] {
+    flex: 1; min-width: 230px; padding: 10px 14px; border: 1px solid #cbd5e1;
+    border-radius: 9px; font-size: 14px; outline: none;
+  }
+  .toolbar input[type=search]:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #bfdbfe; }
+  .toolbar label.chk { font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; user-select: none; }
+  #stats { font-size: 13.5px; color: var(--muted); }
+
+  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+  .card {
+    background: var(--card); border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 10px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card b { font-size: 13.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .card small { color: var(--muted); display: block; }
+  .card select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 13px; }
+  .card .x { background: #fee2e2; color: #b91c1c; border: none; border-radius: 7px; width: 26px; height: 26px; cursor: pointer; font-weight: 700; }
+  .card .x:hover { background: #fecaca; }
+
+  .tablewrap { background: var(--card); border-radius: 14px; overflow: auto; box-shadow: 0 2px 10px rgba(0,0,0,.07); max-height: 70vh; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    position: sticky; top: 0; background: #1e293b; color: #fff; padding: 11px 12px;
+    text-align: left; cursor: pointer; user-select: none; white-space: nowrap; z-index: 2;
+  }
+  thead th:hover { background: #334155; }
+  thead th .arr { font-size: 10px; opacity: .55; margin-left: 5px; }
+  thead th.sorted .arr { opacity: 1; color: #7dd3fc; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+  tbody tr:hover { background: #eff6ff; }
+  td.num, th.num { text-align: center; }
+  td.zero { color: #cbd5e1; }
+  td.best { background: #dcfce7; color: #166534; font-weight: 700; border-radius: 4px; }
+  td.total { font-weight: 700; color: var(--blue-dark); }
+  .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📊 Comparateur de Ventes par Mois</h1>
+  <p>Glissez vos fichiers Excel (Mois_08, Mois_09, …) → comparez les quantités par EAN → exportez en Excel</p>
+</header>
+
+<main>
+  <div id="warnBanner">⚠️ Bibliothèque Excel non chargée (xlsx.full.min.js introuvable à côté de ce fichier). La lecture/écriture Excel ne fonctionnera pas. Vérifiez votre connexion pour le mode secours en ligne.</div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="dropzone" id="dz">
+    <div class="icon">📥</div>
+    <h2>Déposez ici vos fichiers Excel</h2>
+    <p>Chaque fichier = 1 mois. Colonnes détectées automatiquement (Produit / Qté)</p>
+    <button class="btn" type="button">Choisir des fichiers (.xlsx)</button>
+    <input type="file" id="fi" accept=".xlsx,.xls" multiple>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="🔎 Rechercher un EAN ou un nom de produit…">
+    <label class="chk"><input type="checkbox" id="hideZero"> Cacher les produits à 0</label>
+    <span id="stats"></span>
+    <button class="btn green" id="exportBtn" disabled>⬇️ Exporter en Excel</button>
+  </div>
+
+  <div class="tablewrap" id="tblwrap">
+    <div class="empty">Aucun fichier chargé.<br>Déposez vos 3 fichiers Excel ci-dessus pour commencer 👆</div>
+  </div>
+</main>
+
+<script>
+(function () {
+  const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  /* ---------- état ---------- */
+  let files = [];        // { id, name, month(n° 1-12), map {ean:{name,qty}} }
+  let seq = 0;
+  let sortKey = 'total', sortDir = -1;
+  let data = [];         // merged rows
+  let libReady = typeof XLSX !== 'undefined';
+
+  if (!libReady) {
+    // secours : charger la bibliothèque en ligne
+    const s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload = () => { libReady = true; document.getElementById('warnBanner').style.display = 'none'; };
+    document.head.appendChild(s);
+  } else {
+    document.getElementById('warnBanner').style.display = 'none';
+  }
+
+  const dz = document.getElementById('dz');
+  const fi = document.getElementById('fi');
+  const cards = document.getElementById('cards');
+  const tblwrap = document.getElementById('tblwrap');
+  const stats = document.getElementById('stats');
+  const searchEl = document.getElementById('search');
+  const hideZero = document.getElementById('hideZero');
+  const exportBtn = document.getElementById('exportBtn');
+
+  /* ---------- dropzone ---------- */
+  dz.addEventListener('click', () => fi.click());
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+  fi.addEventListener('change', () => { handleFiles(fi.files); fi.value = ''; });
+
+  /* ---------- lecture des fichiers ---------- */
+  function handleFiles(list) {
+    if (!libReady) { alert("La bibliothèque Excel n'est pas encore chargée. Vérifiez que le fichier xlsx.full.min.js est à côté de ce site, ou votre connexion internet."); return; }
+    const arr = Array.from(list).filter(f => /\.(xlsx|xls)$/i.test(f.name));
+    if (!arr.length) { alert('Merci de déposer des fichiers .xlsx ou .xls'); return; }
+    arr.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try { ingestFile(f.name, new Uint8Array(e.target.result)); }
+        catch (err) { alert('Erreur en lisant ' + f.name + ' :\n' + err.message); }
+      };
+      reader.readAsArrayBuffer(f);
+    });
+  }
+
+  function detectMonth(name) {
+    const m = name.toLowerCase().match(/mois[\s_.-]*(\d{1,2})/);
+    if (m) return Math.max(1, Math.min(12, parseInt(m[1], 10)));
+    return null;
+  }
+
+  function ingestFile(name, bytes) {
+    const wb = XLSX.read(bytes, { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    if (!rows.length) throw new Error('Feuille vide');
+
+    // trouver la ligne d'en-tête (contient "produit")
+    let h = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('produit')));
+    if (h < 0) h = 0;
+    // colonne produit et colonne qté
+    const hrow = rows[h].map(c => String(c).toLowerCase());
+    let pc = hrow.findIndex(c => c.includes('produit') || c.includes('article') || c.includes('designation') || c.includes('nom'));
+    if (pc < 0) pc = 0;
+    let qc = hrow.findIndex(c => /^qt|qt\b|quant/.test(c));
+    if (qc < 0) qc = (pc === 0 ? 1 : 2) - 1;
+
+    const map = {};
+    let count = 0;
+    for (let r = h + 1; r < rows.length; r++) {
+      const raw = String(rows[r][pc] ?? '').trim();
+      if (!raw) continue;
+      let ean = raw, nameTxt = raw;
+      const m = raw.match(/\[(\d+)\]/);
+      if (m) { ean = m[1]; nameTxt = raw.replace(/\[\d+\]/, '').trim(); }
+      let q = Number(String(rows[r][qc] ?? '').toString().replace(/\s/g, '').replace(',', '.'));
+      if (!isFinite(q)) q = 0;
+      if (!map[ean]) { map[ean] = { name: nameTxt, qty: 0 }; count++; }
+      map[ean].name = nameTxt;
+      map[ean].qty += q;
+    }
+    if (!count) throw new Error('Aucun produit trouvé dans le fichier');
+
+    // mois : détecté dans le nom du fichier, sinon le prochain libre
+    let mo = detectMonth(name);
+    const taken = new Set(files.map(f => f.month));
+    if (mo === null || taken.has(mo)) {
+      for (let i = 1; i <= 12; i++) if (!taken.has(i)) { mo = i; break; }
+    }
+    files.push({ id: ++seq, name: name.replace(/\.(xlsx|xls)$/i, ''), month: mo, map, count });
+    render();
+  }
+
+  /* ---------- cartes fichiers ---------- */
+  function renderCards() {
+    cards.innerHTML = '';
+    files.forEach(f => {
+      const d = document.createElement('div');
+      d.className = 'card';
+      const opts = MONTHS.map((n, i) =>
+        `<option value="${i + 1}" ${f.month === i + 1 ? 'selected' : ''}>Mois ${String(i + 1).padStart(2, '0')} — ${n}</option>`).join('');
+      d.innerHTML = `<div style="min-width:180px"><b>${esc(f.name)}</b><small>${f.count} produits</small></div>
+         <select title="Choisir le mois de ce fichier">${opts}</select>
+         <button class="x" title="Retirer ce fichier">✕</button>`;
+      d.querySelector('select').addEventListener('change', e => { f.month = +e.target.value; render(); });
+      d.querySelector('.x').addEventListener('click', () => {
+        files = files.filter(x => x.id !== f.id);
+        if (!files.length) { sortKey = 'total'; sortDir = -1; }
+        render();
+      });
+      cards.appendChild(d);
+    });
+  }
+
+  /* ---------- fusion ---------- */
+  function merge() {
+    const ordered = [...files].sort((a, b) => a.month - b.month);
+    const all = new Map(); // ean -> {name, months: { mesi: qty }}
+    ordered.forEach(f => {
+      Object.entries(f.map).forEach(([ean, v]) => {
+        if (!all.has(ean)) all.set(ean, { ean, name: v.name, m: {} });
+        const row = all.get(ean);
+        if (v.name) row.name = v.name;
+        row.m[f.month] = (row.m[f.month] || 0) + v.qty;
+      });
+    });
+    const months = [...new Set(ordered.map(f => f.month))].sort((a, b) => a - b);
+    return { rows: [...all.values()], months };
+  }
+
+  function computeTotals() {
+    const { rows, months } = merge();
+    rows.forEach(r => {
+      r.list = months.map(mi => r.m[mi] ?? null);   // null = pas dans ce fichier
+      r.values = months.map(mi => r.m[mi] ?? 0);
+      r.total = r.values.reduce((a, b) => a + b, 0);
+      r.bestIdx = r.values.reduce((bi, v, i) => v > r.values[bi] ? i : bi, 0);
+      r.best = r.total > 0 ? r.values[r.bestIdx] : 0;
+    });
+    return { rows, months };
+  }
+
+  /* ---------- rendu table ---------- */
+  function render() {
+    renderCards();
+    const { rows, months } = computeTotals();
+    data = rows;
+
+    if (!files.length) {
+      tblwrap.innerHTML = '<div class="empty">Aucun fichier chargé.<br>Déposez vos 3 fichiers Excel ci-dessus pour commencer 👆</div>';
+      exportBtn.disabled = true; stats.textContent = '';
+      return;
+    }
+    exportBtn.disabled = false;
+
+    // filtre recherche + cacher les zéros
+    const q = searchEl.value.trim().toLowerCase();
+    let view = rows.filter(r => !q || r.ean.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+    if (hideZero.checked) view = view.filter(r => r.total > 0);
+
+    // tri
+    const key = sortKey;
+    view.sort((a, b) => {
+      let va, vb;
+      if (key === 'ean') { va = a.ean; vb = b.ean; }
+      else if (key === 'name') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+      else if (key === 'total' || key === 'm0') { va = a.total; vb = b.total; }
+      else if (key === 'best') { va = a.best; vb = b.best; }
+      else if (key.startsWith('v')) { const i = +key.slice(1); va = a.values[i]; vb = b.values[i]; }
+      else { va = a.list[+key.slice(1)]; vb = b.list[+key.slice(1)]; }
+      if (va < vb) return -sortDir; if (va > vb) return sortDir; return 0;
+    });
+
+    const hasArr = s => `<span class="arr">▲▼</span>`;
+    let html = `<table><thead><tr>
+      <th class="num" data-k="ean">EAN${hasArr()}</th>
+      <th data-k="name">Produit${hasArr()}</th>`;
+    months.forEach((mi, i) => {
+      html += `<th class="num" data-k="v${i}">Mois ${String(mi).padStart(2, '0')}${hasArr()}</th>`;
+    });
+    html += `<th class="num" data-k="total">Total${hasArr()}</th>
+      <th class="num" data-k="best">Meilleur Mois${hasArr()}</th></tr></thead><tbody>`;
+
+    view.forEach(r => {
+      html += `<tr><td class="num">${esc(r.ean)}</td><td>${esc(r.name)}</td>`;
+      r.list.forEach((v, i) => {
+        const cls = v === null ? 'num zero' : (r.total > 0 && i === r.bestIdx ? 'num best' : 'num' + (v === 0 ? ' zero' : ''));
+        html += `<td class="${cls}">${v === null ? '–' : v}</td>`;
+      });
+      html += `<td class="num total">${r.total}</td>`;
+      html += `<td class="num">${r.total > 0 ? 'Mois ' + String(months[r.bestIdx]).padStart(2, '0') + ' (' + r.best + ')' : '–'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    tblwrap.innerHTML = html;
+    stats.textContent = `${view.length} produits affichés / ${rows.length} au total`;
+
+    // clicks de tri sur les th
+    tblwrap.querySelectorAll('th[data-k]').forEach(th => {
+      if (th.dataset.k === sortKey) th.classList.add('sorted');
+      th.addEventListener('click', () => {
+        if (sortKey === th.dataset.k) sortDir = -sortDir;
+        else { sortKey = th.dataset.k; sortDir = (sortKey === 'ean' || sortKey === 'name') ? 1 : -1; }
+        render();
+      });
+    });
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&', '<': '<', '>': '>', '"': '"' }[c])); }
+
+  searchEl.addEventListener('input', render);
+  hideZero.addEventListener('change', render);
+
+  /* ---------- export excel ---------- */
+  exportBtn.addEventListener('click', () => {
+    if (!libReady) { alert("Bibliothèque Excel non chargée."); return; }
+    const { rows, months } = computeTotals();
+    const q = searchEl.value.trim().toLowerCase();
+    const view = rows.filter(r => !q || r.ean.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+                     .filter(r => !hideZero.checked || r.total > 0);
+    const head = ['EAN', 'Produit', ...months.map(mi => `Mois ${String(mi).padStart(2, '0')} (Qté)`), 'Total', 'Meilleur Mois (Qté Max)'];
+    const aoa = [head];
+    view.sort((a, b) => b.total - a.total).forEach(r => {
+      aoa.push([
+        r.ean, r.name,
+        ...r.list.map(v => v === null ? '' : v),
+        r.total,
+        r.total > 0 ? `Mois ${String(months[r.bestIdx]).padStart(2, '0')} (${r.best})` : '-'
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 15 }, { wch: 42 }, ...months.map(() => ({ wch: 13 })), { wch: 9 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Comparaison');
+    XLSX.writeFile(wb, 'Comparaison_Ventes.xlsx');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
